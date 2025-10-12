@@ -14,14 +14,31 @@ class UserSerializer(serializers.ModelSerializer):
     User serializer for user data
     Used for user profile display and updates
     """
+    has_instances = serializers.SerializerMethodField()
+    instances = serializers.SerializerMethodField()
+    
     class Meta:
         model = User
         fields = [
             'id', 'email', 'name', 'phone', 'avatar',
             'language', 'is_active', 'is_staff', 'is_superuser',
-            'date_joined', 'last_login'
+            'date_joined', 'last_login', 'has_instances', 'instances'
         ]
-        read_only_fields = ['id', 'is_staff', 'is_superuser', 'date_joined', 'last_login']
+        read_only_fields = ['id', 'is_staff', 'is_superuser', 'date_joined', 'last_login', 'has_instances', 'instances']
+    
+    def get_has_instances(self, obj):
+        """Check if user has any instances (completed onboarding)"""
+        return obj.instance_memberships.filter(is_active=True).exists()
+    
+    def get_instances(self, obj):
+        """Get user's instances with minimal data"""
+        from apps.instances.models import InstanceMember
+        memberships = InstanceMember.objects.filter(user=obj, is_active=True).select_related('instance')
+        return [{
+            'id': str(m.instance.id),
+            'name': m.instance.name,
+            'role': m.role
+        } for m in memberships]
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):

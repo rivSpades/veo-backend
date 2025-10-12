@@ -46,6 +46,23 @@ class Instance(models.Model):
     google_review_count = models.IntegerField(default=0)
     show_google_rating = models.BooleanField(default=False)
 
+    # QR Code Settings
+    qr_foreground_color = models.CharField(max_length=7, default='#000000')  # Hex color
+    qr_size = models.IntegerField(default=400)
+    qr_margin = models.IntegerField(default=4)
+    qr_error_correction_level = models.CharField(
+        max_length=1,
+        choices=[
+            ('L', 'Low'),
+            ('M', 'Medium'),
+            ('Q', 'Quartile'),
+            ('H', 'High'),
+        ],
+        default='M'
+    )
+    qr_logo_image = models.ImageField(upload_to='qr_logos/', null=True, blank=True)
+    qr_selected_menu_id = models.UUIDField(null=True, blank=True)  # Reference to selected menu
+
     # Subscription
     subscription_status = models.CharField(
         max_length=20,

@@ -38,7 +38,10 @@ class InstanceSerializer(serializers.ModelSerializer):
             'cuisine_type', 'wifi_name', 'wifi_password',
             'show_wifi_on_menu', 'show_hours_on_menu',
             'google_business_url', 'google_rating', 'google_review_count',
-            'show_google_rating', 'subscription_status',
+            'show_google_rating',
+            'qr_foreground_color', 'qr_size', 'qr_margin', 
+            'qr_error_correction_level', 'qr_logo_image', 'qr_selected_menu_id',
+            'subscription_status',
             'trial_start_date', 'trial_end_date', 'subscription_start_date',
             'is_active', 'created_at', 'updated_at',
             'business_hours', 'member_count'
@@ -166,7 +169,9 @@ class InstanceUpdateSerializer(serializers.ModelSerializer):
             'city', 'country', 'phone', 'email', 'website',
             'whatsapp', 'cuisine_type', 'wifi_name', 'wifi_password',
             'show_wifi_on_menu', 'show_hours_on_menu',
-            'google_business_url', 'show_google_rating'
+            'google_business_url', 'show_google_rating',
+            'qr_foreground_color', 'qr_size', 'qr_margin',
+            'qr_error_correction_level', 'qr_logo_image', 'qr_selected_menu_id'
         ]
 
     def update(self, instance, validated_data):

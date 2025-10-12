@@ -19,6 +19,7 @@ urlpatterns = [
     path('api/', include('apps.authentication.urls')),
     path('api/', include('apps.instances.urls')),
     path('api/', include('apps.menus.urls')),
+    path('api/', include('apps.support.urls')),
 ]
 
 # Serve media files in development
