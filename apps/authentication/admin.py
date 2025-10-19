@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, MagicLink, UserSession
+from .models import User, MagicLink, UserSession, PhoneVerification
 
 
 @admin.register(User)
@@ -48,3 +48,24 @@ class UserSessionAdmin(admin.ModelAdmin):
     search_fields = ['user__email', 'ip_address']
     readonly_fields = ['token', 'created_at', 'last_activity']
     ordering = ['-last_activity']
+
+
+@admin.register(PhoneVerification)
+class PhoneVerificationAdmin(admin.ModelAdmin):
+    list_display = ['user', 'phone_number', 'is_verified', 'created_at', 'expires_at', 'attempts']
+    list_filter = ['is_verified', 'created_at', 'expires_at']
+    search_fields = ['phone_number', 'user__email', 'verification_code']
+    readonly_fields = ['verification_code', 'created_at', 'verified_at', 'attempts']
+    ordering = ['-created_at']
+    
+    fieldsets = (
+        (None, {
+            'fields': ('user', 'phone_number', 'verification_code')
+        }),
+        ('Status', {
+            'fields': ('is_verified', 'verified_at', 'attempts', 'max_attempts')
+        }),
+        ('Timing', {
+            'fields': ('created_at', 'expires_at')
+        }),
+    )

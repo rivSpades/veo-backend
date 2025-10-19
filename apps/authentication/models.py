@@ -2,6 +2,8 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from django.db import models
 from django.utils import timezone
 import secrets
+import random
+import string
 
 
 class UserManager(BaseUserManager):
@@ -45,6 +47,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     # Profile fields
     phone = models.CharField(max_length=20, blank=True)
+    is_phone_verified = models.BooleanField(default=False)
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
     language = models.CharField(max_length=10, default='en')
 
@@ -141,3 +144,62 @@ class UserSession(models.Model):
         if timezone.now() > self.expires_at:
             return False
         return True
+
+
+class PhoneVerification(models.Model):
+    """Phone number verification for users."""
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='phone_verifications')
+    phone_number = models.CharField(max_length=20, db_index=True)
+    verification_code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_verified = models.BooleanField(default=False)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.PositiveIntegerField(default=0)
+    max_attempts = models.PositiveIntegerField(default=3)
+    
+    class Meta:
+        db_table = 'phone_verifications'
+        verbose_name = 'Phone Verification'
+        verbose_name_plural = 'Phone Verifications'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Phone verification for {self.phone_number} - {'Verified' if self.is_verified else 'Pending'}"
+    
+    @staticmethod
+    def generate_verification_code():
+        """Generate a 6-digit verification code."""
+        return ''.join(random.choices(string.digits, k=6))
+    
+    def is_valid(self):
+        """Check if the verification code is still valid."""
+        if self.is_verified:
+            return False
+        if timezone.now() > self.expires_at:
+            return False
+        if self.attempts >= self.max_attempts:
+            return False
+        return True
+    
+    def verify_code(self, code):
+        """Verify the provided code."""
+        if not self.is_valid():
+            return False
+        
+        if self.verification_code == code:
+            self.is_verified = True
+            self.verified_at = timezone.now()
+            self.save()
+            return True
+        else:
+            self.attempts += 1
+            self.save()
+            return False
+    
+    def mark_as_verified(self):
+        """Mark the phone number as verified."""
+        self.is_verified = True
+        self.verified_at = timezone.now()
+        self.save()

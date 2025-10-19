@@ -4,7 +4,7 @@ Handles user registration, login, and profile serialization
 """
 from rest_framework import serializers
 from django.contrib.auth import get_user_model, authenticate
-from .models import MagicLink, UserSession
+from .models import MagicLink, UserSession, PhoneVerification
 
 User = get_user_model()
 
@@ -20,7 +20,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'email', 'name', 'phone', 'avatar',
+            'id', 'email', 'name', 'phone', 'is_phone_verified', 'avatar',
             'language', 'is_active', 'is_staff', 'is_superuser',
             'date_joined', 'last_login', 'has_instances', 'instances'
         ]
@@ -57,6 +57,17 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         if User.objects.filter(email=value.lower()).exists():
             raise serializers.ValidationError("A user with this email already exists.")
         return value.lower()
+
+    def validate_phone(self, value):
+        """Clean and validate phone number"""
+        if value:
+            # Remove all spaces from phone number
+            cleaned_phone = value.replace(' ', '')
+            # Check if phone number is unique
+            if User.objects.filter(phone=cleaned_phone).exists():
+                raise serializers.ValidationError("A user with this phone number already exists.")
+            return cleaned_phone
+        return value
 
     def create(self, validated_data):
         """Create new user with hashed password"""
@@ -165,3 +176,56 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
         return instance
+
+
+class PhoneVerificationRequestSerializer(serializers.Serializer):
+    """
+    Serializer for requesting phone verification
+    """
+    phone_number = serializers.CharField(max_length=20, required=True)
+    
+    def validate_phone_number(self, value):
+        """Validate and normalize phone number"""
+        import re
+        # Remove all spaces first, then remove all non-digit characters except +
+        cleaned = re.sub(r'[^\d+]', '', value.replace(' ', ''))
+        
+        # If it doesn't start with +, add it
+        if not cleaned.startswith('+'):
+            cleaned = '+' + cleaned
+        
+        # Basic validation - should have at least 10 digits
+        digits_only = re.sub(r'[^\d]', '', cleaned)
+        if len(digits_only) < 10:
+            raise serializers.ValidationError("Please enter a valid phone number with country code.")
+        
+        return cleaned
+
+
+class PhoneVerificationConfirmSerializer(serializers.Serializer):
+    """
+    Serializer for confirming phone verification code
+    """
+    verification_code = serializers.CharField(max_length=6, required=True)
+    
+    def validate_verification_code(self, value):
+        """Validate verification code format"""
+        if not value.isdigit() or len(value) != 6:
+            raise serializers.ValidationError("Verification code must be 6 digits.")
+        return value
+
+
+class PhoneVerificationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for phone verification records
+    """
+    class Meta:
+        model = PhoneVerification
+        fields = [
+            'id', 'phone_number', 'created_at', 'expires_at',
+            'is_verified', 'verified_at', 'attempts', 'max_attempts'
+        ]
+        read_only_fields = [
+            'id', 'created_at', 'expires_at', 'is_verified',
+            'verified_at', 'attempts', 'max_attempts'
+        ]

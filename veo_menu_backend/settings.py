@@ -5,6 +5,7 @@ Django settings for veo_menu_backend project.
 from pathlib import Path
 from datetime import timedelta
 import os
+from decouple import config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -235,3 +236,11 @@ AUTH_USER_MODEL = 'authentication.User'
 
 # Frontend URL
 FRONTEND_URL = get_env('FRONTEND_URL', 'http://localhost:3000')
+
+# Twilio Settings
+TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = config('TWILIO_AUTH_TOKEN')
+TWILIO_PHONE_NUMBER = config('TWILIO_PHONE_NUMBER')
+
+# SendGrid Settings
+SENDGRID_API_KEY = get_env('SENDGRID_API_KEY')

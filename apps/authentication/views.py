@@ -11,9 +11,10 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
+from datetime import timedelta
 import secrets
 
-from .models import MagicLink, UserSession
+from .models import MagicLink, UserSession, PhoneVerification
 from .serializers import (
     UserSerializer,
     UserRegistrationSerializer,
@@ -21,8 +22,12 @@ from .serializers import (
     MagicLinkRequestSerializer,
     MagicLinkVerifySerializer,
     UserSessionSerializer,
-    UserProfileUpdateSerializer
+    UserProfileUpdateSerializer,
+    PhoneVerificationRequestSerializer,
+    PhoneVerificationConfirmSerializer,
+    PhoneVerificationSerializer
 )
+from .services import PhoneService, EmailService
 
 User = get_user_model()
 
@@ -45,9 +50,25 @@ class AuthViewSet(viewsets.GenericViewSet):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
+        # Generate JWT tokens for automatic login
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
+
+        # Create user session
+        UserSession.objects.create(
+            user=user,
+            token=access_token,
+            refresh_token=refresh_token,
+            expires_at=timezone.now() + timedelta(days=30),  # 30 days expiration
+            is_active=True
+        )
+
         return Response({
-            'message': 'Registration successful. Please log in.',
-            'user': UserSerializer(user).data
+            'message': 'Registration successful. You are now logged in.',
+            'user': UserSerializer(user).data,
+            'access_token': access_token,
+            'refresh_token': refresh_token
         }, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['post'], url_path='login')
@@ -191,6 +212,120 @@ class AuthViewSet(viewsets.GenericViewSet):
         return Response({
             'message': 'Logout successful'
         }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='request-phone-verification', permission_classes=[IsAuthenticated])
+    def request_phone_verification(self, request):
+        """
+        Request phone number verification via SMS
+        POST /api/auth/request-phone-verification/
+        Body: {phone_number}
+        """
+        serializer = PhoneVerificationRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        phone_service = PhoneService()
+        result = phone_service.create_verification(request.user, serializer.validated_data['phone_number'])
+        
+        if result['success']:
+            return Response({
+                'message': 'Verification code sent to your phone number.',
+                'verification_id': result['verification_id'],
+                'phone_number': result['phone_number'],
+                'expires_at': result['expires_at']
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'error': result['error'],
+                'cooldown_remaining': result.get('cooldown_remaining', 0)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'], url_path='confirm-phone-verification', permission_classes=[IsAuthenticated])
+    def confirm_phone_verification(self, request):
+        """
+        Confirm phone verification code
+        POST /api/auth/confirm-phone-verification/
+        Body: {verification_code}
+        """
+        serializer = PhoneVerificationConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        phone_service = PhoneService()
+        result = phone_service.verify_code_for_user(
+            request.user,
+            serializer.validated_data['verification_code']
+        )
+        
+        if result['success']:
+            return Response({
+                'message': result['message'],
+                'user': UserSerializer(request.user).data
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'error': result['error']
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'], url_path='phone-verification-cooldown', permission_classes=[IsAuthenticated])
+    def phone_verification_cooldown(self, request):
+        """
+        Check phone verification cooldown status
+        GET /api/auth/phone-verification-cooldown/
+        """
+        from .services import PhoneService
+        
+        phone_service = PhoneService()
+        cooldown_minutes = 10
+        
+        # Check for recent verification (single entry per user)
+        try:
+            verification = PhoneVerification.objects.get(user=request.user)
+            
+            # If code has expired, mark it as verified to prevent it from being considered active
+            if verification.expires_at < timezone.now() and not verification.is_verified:
+                print(f"[COOLDOWN DEBUG] Code has expired, marking as verified to prevent reuse")
+                verification.is_verified = True
+                verification.save()
+            
+            time_remaining = (verification.created_at + timedelta(minutes=cooldown_minutes) - timezone.now()).total_seconds()
+            
+            print(f"[COOLDOWN DEBUG] User: {request.user.id}")
+            print(f"[COOLDOWN DEBUG] Verification created_at: {verification.created_at}")
+            print(f"[COOLDOWN DEBUG] Current time: {timezone.now()}")
+            print(f"[COOLDOWN DEBUG] Time remaining: {time_remaining}")
+            print(f"[COOLDOWN DEBUG] Is verified: {verification.is_verified}")
+            print(f"[COOLDOWN DEBUG] Expires at: {verification.expires_at}")
+            print(f"[COOLDOWN DEBUG] Code expired: {verification.expires_at < timezone.now()}")
+            print(f"[COOLDOWN DEBUG] Has active code: {not verification.is_verified and verification.expires_at > timezone.now()}")
+            
+            if time_remaining > 0:
+                print(f"[COOLDOWN DEBUG] Returning cooldown active: {int(time_remaining)} seconds")
+                return Response({
+                    'cooldown_active': True,
+                    'cooldown_remaining': int(time_remaining),
+                    'can_send': False,
+                    'last_sent_at': verification.created_at,
+                    'has_active_code': not verification.is_verified and verification.expires_at > timezone.now()
+                }, status=status.HTTP_200_OK)
+            else:
+                # Cooldown expired but check if there's still an active code
+                has_active_code = not verification.is_verified and verification.expires_at > timezone.now()
+                print(f"[COOLDOWN DEBUG] Cooldown expired, has_active_code: {has_active_code}")
+                return Response({
+                    'cooldown_active': False,
+                    'cooldown_remaining': 0,
+                    'can_send': True,
+                    'last_sent_at': verification.created_at,
+                    'has_active_code': has_active_code
+                }, status=status.HTTP_200_OK)
+        except PhoneVerification.DoesNotExist:
+            print(f"[COOLDOWN DEBUG] No verification found for user: {request.user.id}")
+            return Response({
+                'cooldown_active': False,
+                'cooldown_remaining': 0,
+                'can_send': True,
+                'last_sent_at': None,
+                'has_active_code': False
+            }, status=status.HTTP_200_OK)
 
 
 class UserViewSet(viewsets.ReadOnlyModelViewSet):

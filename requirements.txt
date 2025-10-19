@@ -20,6 +20,10 @@ boto3==1.29.7
 
 # Email
 django-ses==3.5.0
+sendgrid==6.10.0
+
+# SMS
+twilio==8.10.0
 
 # API Documentation
 drf-spectacular==0.26.5
