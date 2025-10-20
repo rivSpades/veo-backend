@@ -64,6 +64,20 @@ class AuthViewSet(viewsets.GenericViewSet):
             is_active=True
         )
 
+        # Send welcome email
+        try:
+            print(f"Attempting to send welcome email to {user.email}")
+            email_service = EmailService()
+            welcome_result = email_service.send_welcome_email(user.email, user.name)
+            print(f"Welcome email result: {welcome_result}")
+            
+            # Log email result (don't fail registration if email fails)
+            if not welcome_result['success']:
+                print(f"Failed to send welcome email to {user.email}: {welcome_result.get('error', 'Unknown error')}")
+        except Exception as e:
+            print(f"Error in welcome email sending: {str(e)}")
+            # Don't fail registration for email issues
+
         return Response({
             'message': 'Registration successful. You are now logged in.',
             'user': UserSerializer(user).data,
