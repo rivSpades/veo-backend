@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.utils.html import format_html
 from .models import Menu, MenuSection, MenuItem, MenuView, QRCode, MenuTag, MenuAllergen
 
 
@@ -11,8 +12,8 @@ class MenuSectionInline(admin.TabularInline):
 
 @admin.register(Menu)
 class MenuAdmin(admin.ModelAdmin):
-    list_display = ['name', 'instance', 'is_published', 'is_active', 'view_count', 'created_at']
-    list_filter = ['is_published', 'is_active', 'default_language', 'created_at']
+    list_display = ['name', 'instance', 'is_demo', 'is_published', 'is_active', 'view_count', 'created_at']
+    list_filter = ['is_demo', 'is_published', 'is_active', 'default_language', 'created_at']
     search_fields = ['name', 'instance__name']
     readonly_fields = ['id', 'view_count', 'last_viewed_at', 'created_at', 'updated_at']
     inlines = [MenuSectionInline]
@@ -26,7 +27,7 @@ class MenuAdmin(admin.ModelAdmin):
             'fields': ('default_language', 'available_languages')
         }),
         ('Status', {
-            'fields': ('is_active', 'is_published')
+            'fields': ('is_active', 'is_published', 'is_demo')
         }),
         ('Analytics', {
             'fields': ('view_count', 'last_viewed_at'),
@@ -37,6 +38,13 @@ class MenuAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+    
+    def save_model(self, request, obj, form, change):
+        # Ensure only one menu is marked as demo
+        if obj.is_demo:
+            # Unmark all other demo menus
+            Menu.objects.filter(is_demo=True).exclude(pk=obj.pk).update(is_demo=False)
+        super().save_model(request, obj, form, change)
 
 
 class MenuItemInline(admin.TabularInline):
@@ -65,12 +73,12 @@ class MenuItemAdmin(admin.ModelAdmin):
     list_display = ['get_name', 'section', 'price', 'currency', 'is_available', 'is_featured', 'view_count']
     list_filter = ['is_available', 'is_featured', 'is_vegetarian', 'is_vegan', 'is_gluten_free', 'spicy_level']
     search_fields = ['name', 'section__name']
-    readonly_fields = ['id', 'view_count', 'created_at', 'updated_at']
+    readonly_fields = ['id', 'image_preview', 'view_count', 'created_at', 'updated_at']
     ordering = ['section', 'order']
 
     fieldsets = (
         ('Basic Information', {
-            'fields': ('id', 'section', 'name', 'description', 'image')
+            'fields': ('id', 'section', 'name', 'description', 'image', 'image_preview')
         }),
         ('Pricing', {
             'fields': ('price', 'currency')
@@ -99,6 +107,16 @@ class MenuItemAdmin(admin.ModelAdmin):
     def get_name(self, obj):
         return obj.name.get('en', 'Untitled')
     get_name.short_description = 'Name'
+
+    def image_preview(self, obj):
+        """Display image preview in admin"""
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="max-height: 200px; max-width: 200px;" />',
+                obj.image.url
+            )
+        return "No image uploaded"
+    image_preview.short_description = 'Image Preview'
 
 
 @admin.register(MenuTag)

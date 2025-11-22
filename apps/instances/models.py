@@ -80,6 +80,7 @@ class Instance(models.Model):
 
     # Status
     is_active = models.BooleanField(default=True)
+    is_demo = models.BooleanField(default=False, help_text="Mark this instance as the demo instance for the landing page")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

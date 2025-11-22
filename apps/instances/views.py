@@ -5,7 +5,7 @@ Handles restaurant/bar instances, members, and business hours
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 
@@ -61,6 +61,60 @@ class InstanceViewSet(viewsets.ModelViewSet):
             'message': 'Instance created successfully',
             'instance': InstanceSerializer(instance).data
         }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], url_path='demo', permission_classes=[AllowAny])
+    def demo(self, request):
+        """
+        Get demo instance for landing page (public endpoint, no auth required)
+        GET /api/instances/demo/
+        Returns the instance marked as demo from the database
+        """
+        # Get the demo instance from database
+        demo_instance = Instance.objects.filter(is_demo=True, is_active=True).first()
+        
+        if not demo_instance:
+            return Response({
+                'error': 'No demo instance configured. Please mark an instance as demo in the admin panel.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Get business hours
+        business_hours = BusinessHours.objects.filter(instance=demo_instance).order_by('day_of_week')
+        working_hours = []
+        for bh in business_hours:
+            working_hours.append({
+                'day': dict(BusinessHours.DAY_CHOICES)[bh.day_of_week],
+                'open': str(bh.opening_time) if not bh.is_closed else None,
+                'close': str(bh.closing_time) if not bh.is_closed else None,
+                'closed': bh.is_closed,
+            })
+        
+        # Get logo URL if available
+        logo_url = None
+        if demo_instance.logo:
+            logo_url = request.build_absolute_uri(demo_instance.logo.url)
+        
+        # Build response data
+        demo_data = {
+            'id': str(demo_instance.id),
+            'name': demo_instance.name,
+            'description': demo_instance.description,
+            'address': demo_instance.address,
+            'city': demo_instance.city,
+            'country': demo_instance.country,
+            'phone': demo_instance.phone,
+            'wifiName': demo_instance.wifi_name,
+            'wifiPassword': demo_instance.wifi_password,
+            'showWifiOnMenu': demo_instance.show_wifi_on_menu,
+            'showGoogleRating': demo_instance.show_google_rating,
+            'googleUrl': demo_instance.google_business_url,
+            'googleRating': float(demo_instance.google_rating) if demo_instance.google_rating else None,
+            'googleReviewCount': demo_instance.google_review_count,
+            'logoUrl': logo_url,
+            'showHoursOnMenu': demo_instance.show_hours_on_menu,
+            'workingHours': working_hours,
+        }
+        
+        return Response(demo_data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'], url_path='members')
     def members(self, request, pk=None):

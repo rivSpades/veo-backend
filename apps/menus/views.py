@@ -81,6 +81,140 @@ class MenuViewSet(viewsets.ModelViewSet):
             'menu': MenuSerializer(menu).data
         }, status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=['get'], url_path='demo', permission_classes=[AllowAny])
+    def demo(self, request):
+        """
+        Get demo menu for landing page (public endpoint, no auth required)
+        GET /api/menus/demo/
+        Returns the menu marked as demo from the database
+        """
+        # Get the demo menu from database
+        demo_menu = Menu.objects.filter(is_demo=True, is_active=True).first()
+        
+        if not demo_menu:
+            return Response({
+                'error': 'No demo menu configured. Please mark a menu as demo in the admin panel.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Get all sections for this menu, ordered by order field
+        sections = MenuSection.objects.filter(
+            menu=demo_menu,
+            is_active=True
+        ).order_by('order', 'created_at')
+        
+        # Transform sections to match frontend format
+        # Each MenuSection becomes a section with one subsection containing all items
+        transformed_sections = []
+        for section in sections:
+            # Get all items for this section
+            items = MenuItem.objects.filter(
+                section=section,
+                is_active=True
+            ).order_by('order', 'created_at')
+            
+            # Transform items to match frontend format
+            transformed_items = []
+            for item in items:
+                # Build tags list from item properties
+                tags = []
+                if item.is_vegetarian:
+                    tags.append('vegetarian')
+                if item.is_vegan:
+                    tags.append('vegan')
+                if item.is_gluten_free:
+                    tags.append('gluten-free')
+                if item.is_spicy:
+                    tags.append('spicy')
+                # Add any additional tags from JSON field
+                if item.tags:
+                    tags.extend(item.tags)
+                
+                # Get image URL if available
+                image_url = None
+                if item.image:
+                    image_url = request.build_absolute_uri(item.image.url)
+                
+                transformed_item = {
+                    'id': str(item.id),
+                    'name': item.name.get('en', '') if isinstance(item.name, dict) else str(item.name),
+                    'description': item.description.get('en', '') if isinstance(item.description, dict) else (str(item.description) if item.description else ''),
+                    'fullDescription': item.description.get('en', '') if isinstance(item.description, dict) else (str(item.description) if item.description else ''),
+                    'price': float(item.price),
+                    'image': image_url,
+                    'popular': item.is_featured,
+                    'allergens': item.allergens if item.allergens else [],
+                    'tags': tags,
+                    'sortOrder': item.order,
+                }
+                transformed_items.append(transformed_item)
+            
+            # Each section becomes a section with one subsection
+            # Use section name in default language
+            section_name = section.name.get('en', 'Untitled Section') if isinstance(section.name, dict) else str(section.name)
+            
+            transformed_section = {
+                'id': str(section.id),
+                'name': section_name,
+                'subSections': [
+                    {
+                        'id': str(section.id),  # Use section ID as subsection ID
+                        'name': section_name,
+                        'items': transformed_items,
+                    }
+                ],
+            }
+            transformed_sections.append(transformed_section)
+        
+        # Build translations object for all languages
+        # Menu.name and Menu.description are CharField/TextField (not JSON), so use as-is for all languages
+        translations = {}
+        for lang in demo_menu.available_languages:
+            translations[lang] = {
+                'menu.name': demo_menu.name,
+                'menu.description': demo_menu.description or '',
+            }
+            # Add section and item translations (these are JSON fields)
+            for section in sections:
+                section_id = str(section.id)
+                section_name = section.name.get(lang, section.name.get('en', '')) if isinstance(section.name, dict) else str(section.name)
+                translations[lang][f'section.{section_id}.name'] = section_name
+                translations[lang][f'subsection.{section_id}.name'] = section_name
+                
+                for item in MenuItem.objects.filter(section=section, is_active=True):
+                    item_id = str(item.id)
+                    item_name = item.name.get(lang, item.name.get('en', '')) if isinstance(item.name, dict) else str(item.name)
+                    item_desc = item.description.get(lang, item.description.get('en', '')) if isinstance(item.description, dict) else (str(item.description) if item.description else '')
+                    translations[lang][f'item.{item_id}.name'] = item_name
+                    translations[lang][f'item.{item_id}.description'] = item_desc
+        
+        # Build response data
+        demo_data = {
+            'id': str(demo_menu.id),
+            'name': demo_menu.name,
+            'description': demo_menu.description or '',
+            'languages': demo_menu.available_languages,
+            'default_language': demo_menu.default_language,
+            'translations': translations,
+            'sections': transformed_sections,
+            'design': {
+                'backgroundColor': '#FFFFFF',
+                'fontColor': '#1F2937',
+                'fontFamily': 'Inter',
+                'fontSize': 14,
+                'sectionBackgroundColor': '#F9FAFB',
+                'sectionTextColor': '#111827',
+                'sectionBorderColor': '#E5E7EB',
+                'subsectionBackgroundColor': '#F3F4F6',
+                'subsectionTextColor': '#6B7280',
+                'tabActiveBackgroundColor': '#111827',
+                'tabActiveTextColor': '#FFFFFF',
+                'tabInactiveBackgroundColor': '#F9FAFB',
+                'tabInactiveTextColor': '#111827',
+            },
+        }
+        
+        return Response(demo_data, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['get'], url_path='public', permission_classes=[AllowAny])
     def public_view(self, request, pk=None):
         """

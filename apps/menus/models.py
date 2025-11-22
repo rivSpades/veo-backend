@@ -22,6 +22,7 @@ class Menu(models.Model):
     # Status
     is_active = models.BooleanField(default=True)
     is_published = models.BooleanField(default=False)
+    is_demo = models.BooleanField(default=False, help_text="Mark this menu as the demo menu for the landing page")
 
     # Analytics
     view_count = models.IntegerField(default=0)

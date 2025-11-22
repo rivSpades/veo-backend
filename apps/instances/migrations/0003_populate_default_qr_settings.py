@@ -63,3 +63,4 @@ class Migration(migrations.Migration):
         migrations.RunPython(populate_qr_defaults, reverse_func),
     ]
 
+
