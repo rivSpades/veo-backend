@@ -231,17 +231,35 @@ class MenuViewSet(viewsets.ModelViewSet):
 
         # Track menu view
         language = request.query_params.get('language', menu.default_language)
-        device_type = 'mobile' if 'Mobile' in request.META.get('HTTP_USER_AGENT', '') else 'desktop'
+        user_agent = request.META.get('HTTP_USER_AGENT', '')
+        
+        # Better device detection
+        if any(mobile in user_agent for mobile in ['Mobile', 'Android', 'iPhone', 'iPad']):
+            device_type = 'mobile'
+        elif 'Tablet' in user_agent or 'iPad' in user_agent:
+            device_type = 'tablet'
+        else:
+            device_type = 'desktop'
+        
+        # Get IP address
+        ip_address = None
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip_address = x_forwarded_for.split(',')[0].strip()
+        else:
+            ip_address = request.META.get('REMOTE_ADDR')
 
         MenuView.objects.create(
             menu=menu,
             language=language,
-            device_type=device_type
+            device_type=device_type,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            referrer=request.META.get('HTTP_REFERER', '')
         )
 
         # Increment view count
-        menu.view_count += 1
-        menu.save()
+        menu.increment_views()
 
         return Response(MenuSerializer(menu).data)
 
@@ -266,14 +284,19 @@ class MenuViewSet(viewsets.ModelViewSet):
                 'error': 'You do not have permission to view analytics'
             }, status=status.HTTP_403_FORBIDDEN)
 
-        # Get days parameter (default 7 days)
-        days = int(request.query_params.get('days', 7))
+        # Get days parameter (default 7 days, max 365)
+        try:
+            days = int(request.query_params.get('days', 7))
+            days = min(max(days, 1), 365)  # Clamp between 1 and 365
+        except (ValueError, TypeError):
+            days = 7
+        
         since = timezone.now() - timezone.timedelta(days=days)
 
         views = MenuView.objects.filter(
             menu=menu,
             viewed_at__gte=since
-        )
+        ).order_by('viewed_at')
 
         # Aggregate analytics
         total_views = views.count()
@@ -282,21 +305,22 @@ class MenuViewSet(viewsets.ModelViewSet):
 
         for view in views:
             # Language breakdown
-            lang = view.language
+            lang = view.language or 'unknown'
             language_breakdown[lang] = language_breakdown.get(lang, 0) + 1
 
             # Device breakdown
-            device = view.device_type
+            device = view.device_type or 'unknown'
             device_breakdown[device] = device_breakdown.get(device, 0) + 1
 
         return Response({
-            'menu_id': menu.id,
+            'menu_id': str(menu.id),
             'menu_name': menu.name,
             'period_days': days,
             'total_views': total_views,
             'language_breakdown': language_breakdown,
             'device_breakdown': device_breakdown,
-            'views_by_day': self._get_views_by_day(views, days)
+            'views_by_day': self._get_views_by_day(views, days),
+            'has_data': total_views > 0
         })
 
     def _get_views_by_day(self, views, days):
@@ -307,16 +331,20 @@ class MenuViewSet(viewsets.ModelViewSet):
         views_by_day = defaultdict(int)
         today = timezone.now().date()
 
+        # Count views by day
         for view in views:
-            date = view.viewed_at.date()
-            views_by_day[str(date)] += 1
+            if view.viewed_at:
+                date = view.viewed_at.date()
+                views_by_day[str(date)] += 1
 
-        # Fill in missing days with 0
+        # Fill in missing days with 0 (going backwards from today)
         result = {}
         for i in range(days):
             date = today - datetime.timedelta(days=i)
-            result[str(date)] = views_by_day.get(str(date), 0)
+            date_str = str(date)
+            result[date_str] = views_by_day.get(date_str, 0)
 
+        # Return sorted by date (oldest first)
         return dict(sorted(result.items()))
 
     @action(detail=True, methods=['post'], url_path='duplicate')

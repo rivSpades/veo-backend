@@ -79,7 +79,7 @@ class MenuSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'instance', 'name', 'description', 'icon',
             'default_language', 'available_languages',
-            'is_active', 'view_count', 'created_at',
+            'is_active', 'schedule', 'view_count', 'created_at',
             'updated_at', 'sections', 'section_count', 'total_items'
         ]
         read_only_fields = ['id', 'view_count', 'created_at', 'updated_at']
@@ -103,7 +103,7 @@ class MenuListSerializer(serializers.ModelSerializer):
         model = Menu
         fields = [
             'id', 'instance', 'name', 'icon', 'default_language',
-            'is_active', 'view_count', 'created_at', 'section_count'
+            'is_active', 'schedule', 'view_count', 'created_at', 'section_count'
         ]
         read_only_fields = ['id', 'view_count', 'created_at']
 
@@ -219,8 +219,16 @@ class MenuUpdateSerializer(serializers.ModelSerializer):
         model = Menu
         fields = [
             'name', 'description', 'icon', 'default_language',
-            'available_languages', 'is_active'
+            'available_languages', 'is_active', 'schedule'
         ]
+
+    def validate_schedule(self, value):
+        """Validate schedule structure"""
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Schedule must be a JSON object.")
+        if 'enabled' in value and not isinstance(value['enabled'], bool):
+            raise serializers.ValidationError("Schedule enabled must be a boolean.")
+        return value
 
     def update(self, instance, validated_data):
         """Update menu details"""

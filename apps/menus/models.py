@@ -24,6 +24,9 @@ class Menu(models.Model):
     is_published = models.BooleanField(default=False)
     is_demo = models.BooleanField(default=False, help_text="Mark this menu as the demo menu for the landing page")
 
+    # Schedule
+    schedule = models.JSONField(default=dict, blank=True, help_text="Menu activation schedule: {enabled: bool, startTime: str, endTime: str, days: []}")
+
     # Analytics
     view_count = models.IntegerField(default=0)
     last_viewed_at = models.DateTimeField(null=True, blank=True)
